@@ -8,7 +8,7 @@ final class OfflineIntegrationTests: XCTestCase {
         for _ in 0..<200 {
             let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             if let view = scenes.flatMap(\.windows).compactMap({ $0.rootViewController?.view.subviews.compactMap { $0 as? WKWebView }.first }).first {
-                if let ready = try? await view.evaluateJavaScript("Boolean(window.offlineGame && document.getElementById('root').innerText.length>20)"), ready as? Bool == true { return view }
+                if !view.isLoading, let ready = try? await view.evaluateJavaScript("Boolean(window.offlineGame && document.getElementById('root').innerText.length>20)"), ready as? Bool == true { return view }
             }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
@@ -44,7 +44,8 @@ final class OfflineIntegrationTests: XCTestCase {
         _ = try await web.evaluateJavaScript("for(let i=0;i<160;i++){if(window.offlineGame.state.balance<1700){try{window.offlineGame.request('/bonus/claim','POST',{});}catch(e){break;}}const r=window.offlineGame.request('/spins','POST',{tier:'standard'});window.offlineGame.request('/numbers/'+r.number.id+'/sell','POST',{});}")
         let paths = ["/", "/collection", "/profile", "/skills", "/rewards", "/phones", "/phones/mine", "/shop", "/pass", "/games", "/games?game=coin", "/games?game=dice", "/games?game=crash", "/games?game=forge", "/games?game=lottery", "/trade", "/trade?tab=auction", "/trade?tab=mine", "/trade?tab=prices", "/buyer", "/salons", "/achievements", "/rating", "/ledger", "/settings", "/rules", "/promo"]
         for path in paths {
-            _ = try await web.callAsyncJavaScript("history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')); await new Promise(resolve=>setTimeout(resolve,250)); return true;", arguments: ["path": path], in: nil, contentWorld: .page)
+            _ = try await web.callAsyncJavaScript("history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')); return true;", arguments: ["path": path], in: nil, contentWorld: .page)
+            try await Task.sleep(nanoseconds: 350_000_000)
             let text = try await web.evaluateJavaScript("document.getElementById('root').innerText") as! String
             XCTAssertGreaterThan(text.count, 20, "Blank screen: \(path)")
             XCTAssertFalse(text.contains("не число"), "Invalid amount: \(path)")

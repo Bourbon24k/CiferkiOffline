@@ -65,6 +65,7 @@
       },
       ownedSkins: [],
       vip: false,
+      vipUntil: 0, vipLifetime: false, luckPasses: [], nameColorUnlocked: false,
       extra: 0,
       primaryId: null,
       primaryChanges: 0,
@@ -90,22 +91,22 @@
       profile: { name: "Игрок", tag: null, color: null, frame: null },
     });
     function valid(s) {
-      return (
-        s &&
-        s.version === 1 &&
-        Number.isFinite(s.balance) &&
-        s.balance >= 0 &&
-        Array.isArray(s.numbers) &&
-        s.settings &&
-        s.games &&
-        s.consumables
-      );
+      function shape(value, model) {
+        if(model===null)return value===null||typeof value==='string'||typeof value==='object';
+        if(Array.isArray(model))return Array.isArray(value);
+        if(typeof model==='object')return value&&typeof value==='object'&&!Array.isArray(value)&&Object.entries(model).every(([k,v])=>Object.hasOwn(value,k)&&shape(value[k],v));
+        if(typeof model==='number')return typeof value==='number'&&Number.isFinite(value)&&value>=0;
+        return typeof value===typeof model;
+      }
+      return s&&s.version===1&&shape(s,seed())&&s.numbers.every(n=>n&&Number.isInteger(n.id)&&n.country&&n.operator&&typeof n.nationalNumber==='string'&&Number.isFinite(n.value)&&typeof n.acquiredAt==='string');
     }
     for (const k of [key, key + ".backup"]) {
       try {
         const raw = storage.getItem(k);
         if (raw) {
           const s = JSON.parse(raw);
+          // Add fields introduced before the first public release without losing earlier local test saves.
+          for(const [field,value] of Object.entries({vipUntil:0,vipLifetime:false,luckPasses:[],nameColorUnlocked:false}))if(!Object.hasOwn(s,field))s[field]=value;
           if (!valid(s)) throw Error("bad save");
           state = s;
           recovered = k.endsWith("backup");
@@ -115,7 +116,10 @@
         recovered = true;
       }
     }
-    if (!state) state = seed();
+    if (!state) {
+      if(recovered)for(const k of [key,key+'.backup']){const raw=storage.getItem(k);if(raw)storage.setItem(k+'.damaged',raw);}
+      state = seed();
+    }
     function save() {
       const raw = JSON.stringify(state);
       storage.setItem(key + ".backup", raw);
@@ -175,6 +179,7 @@
       const big = skill("luck_thousand") || 25,
         small = skill("luck_multiplier") || 5;
       let mult = n % 1000 === 0 ? big : n % every === 0 ? small : 1;
+      mult*=Math.max(1,...state.luckPasses.filter(p=>p.endsAt>now()).map(p=>p.multiplier));
       if (state.consumables.luckBoostSpins > 0)
         mult *= state.consumables.luckBoostMultiplier;
       return {
@@ -228,6 +233,7 @@
         nextLuck: l.next,
         nominalLuck: l.next,
       }));
+      for(let d=1;d<=5;d++)if(state.consumables.topSecretByDigits[d-1]>0)c.tiers.push({code:'topsecret_d'+d,title:'TopSecret · '+d+' цифры',description:'Короткий уникальный номер',price:0,effectivePrice:0,paymentKind:'ticket',currency:'soft',version:1,odds:rarities.map(r=>({rarity:r,ppm:r==='mythic'?1000000:0})),nextOdds:rarities.map(r=>({rarity:r,ppm:r==='mythic'?1000000:0})),nextLuck:1,nominalLuck:1});
       return c;
     }
     function progress() {
@@ -255,11 +261,9 @@
       return p;
     }
     function decorate(n) {
-      const x = clone(n);
-      x.isPrimary = n.id === state.primaryId;
-      x.skin = n.skin
-        ? clone(config.shop.skins.find((s) => s.code === n.skin)) || null
-        : null;
+      const x=clone(n),code=typeof n.skin==='string'?n.skin:n.skin?.code;
+      x.isPrimary=n.id===state.primaryId;
+      x.skin=clone(config.shop.skins.find(s=>s.code===code)||null);
       return x;
     }
     function me() {
@@ -410,6 +414,14 @@
       return n;
     }
     function spins(body) {
+      const secret=/^topsecret_d([1-5])$/.exec(body.tier||'');
+      if(secret){const d=Number(secret[1]);if(body.count&&body.count!==1)err('TopSecret выпускается по одному');if(state.consumables.topSecretByDigits[d-1]<=0)err('Нет билета TopSecret');if(state.numbers.length>=me().inventory.limit)err('Коллекция заполнена');
+        const length=d>1&&rnd()<.05?d-1:d,min=length===1?1:10**(length-1),max=10**length-1;let number=int(min,max),attempts=0;
+        while(state.minted['TS:'+number]&&attempts++<=max-min)number=number>=max?min:number+1;
+        if(state.minted['TS:'+number])err('Тираж этой длины исчерпан');
+        const n=generate('mythic',{},'spin');state.minted['TS:'+number]=1;Object.assign(n,{country:{iso2:'TS',name:'TopSecret',flag:'🕵️',dialCode:'',themeColor:'#a855f7'},operator:{code:'TS',name:'TopSecret',color:'#17131f',accent:'#c7a9ff',glyph:'TS',logoStyle:'text',networkCode:null,localLength:length},nationalNumber:String(number),formatted:String(number),prefixLength:0,digitPositions:Array.from({length},(_,i)=>i),limited:true,patterns:[],serial:1,supplyLimit:1,mintedCount:1,value:Math.round(10000000/10**length)});
+        state.consumables.topSecretByDigits[d-1]--;state.consumables.topSecretTickets--;state.numbers.push(n);state.spins++;state.xp+=100;state.passXp+=10;state.earnedByRarity.mythic++;questCount('spin');questCount('epic');unlockAchievements();return {number:decorate(n),spinId:state.nextId++,valueBreakdown:{base:n.value,steps:[]},xpGained:100,luck:1,price:0,tier:body.tier,levelUp:null};
+      }
       const count = body.count ?? 1;
       if (!Number.isInteger(count) || count < 1 || count > 5)
         err("Можно выпустить от 1 до 5 SIM");
@@ -537,7 +549,12 @@
       }
       if (r.skin && !state.ownedSkins.includes(r.skin))
         state.ownedSkins.push(r.skin);
-      if (r.vipDays || r.vipLifetime) state.vip = true;
+      if(r.vipLifetime){state.vipLifetime=true;state.vip=true;}
+      if(r.vipDays){state.vipUntil=Math.max(now(),state.vipUntil)+r.vipDays*86400000;state.vip=true;}
+      if(r.luckPass){const existing=state.luckPasses.find(p=>p.multiplier===r.luckPass.multiplier);if(existing)existing.endsAt=Math.max(now(),existing.endsAt)+r.luckPass.days*86400000;else state.luckPasses.push({multiplier:r.luckPass.multiplier,endsAt:now()+r.luckPass.days*86400000});}
+      if(r.bonusSlots)state.extra+=r.bonusSlots;
+      if(r.nameColor)state.nameColorUnlocked=true;
+      if(r.topSecret){const d=r.topSecret.digits;if(d>=1&&d<=5){state.consumables.topSecretByDigits[d-1]+=r.topSecret.count||1;state.consumables.topSecretTickets+=r.topSecret.count||1;}}
       if (r.inventoryExtra)
         state.extra = Math.min(200, state.extra + r.inventoryExtra);
       if (r.phoneBox)
@@ -585,7 +602,7 @@
     }
     function shop() {
       const s = clone(config.shop);
-      s.me = { ...s.me, vipLifetime: state.vip, tag: state.profile.tag };
+      s.me = { ...s.me, vipLifetime:state.vipLifetime, vipUntil:state.vipUntil?iso(state.vipUntil):null, nameColorUnlocked:state.nameColorUnlocked, luck:state.luckPasses.filter(p=>p.endsAt>now()).map(p=>({...p,endsAt:iso(p.endsAt)})), tag: state.profile.tag };
       s.skins = s.skins.map((x) => ({
         ...x,
         owned: state.ownedSkins.includes(x.code),
@@ -595,8 +612,8 @@
       s.products = s.products.map((p) => ({
         ...p,
         stars: p.stars * 1000,
-        owned: false,
-        giftable: false,
+        owned:p.code==='vip_lifetime'?state.vipLifetime:p.code==='name_color'?state.nameColorUnlocked:false,
+        note:p.category==='topsecret'?'Тираж доступен в этом сохранении':p.note,giftable: false,
       }));
       return s;
     }
@@ -872,7 +889,7 @@
       b.refreshAt = tomorrow();
       b.orders = b.orders.map((o) => ({
         ...o,
-        sold: state.questCounts["buyer:" + o.id] || 0,
+        sold: state.questCounts[day()+":buyer:" + o.id] || 0,
         matches: state.numbers
           .filter(
             (n) =>
@@ -1365,7 +1382,12 @@
             luckBoostMultiplier: prize.multiplier || prize.amount || 2,
             luckBoostSpins: prize.spins || 5,
           });
-        else reward(prize.rewards || { [prize.type]: prize.amount || 1 });
+        else if(prize.type==='standard_ticket')reward({standardTickets:prize.amount});
+        else if(prize.type==='tier_ticket')reward({[prize.tier+'Tickets']:prize.amount});
+        else if(prize.type==='luck_boost')reward({luckBoostMultiplier:prize.multiplier,luckBoostSpins:prize.spins});
+        else if(prize.type==='spin_discount')reward({discount:{percent:prize.percent,uses:prize.uses}});
+        else if(prize.type==='extra_roulette')state.roulette.used-=prize.amount;
+        else reward(prize.rewards || {});
         return {
           prize,
           index: r.prizes.findIndex((x) => x.id === prize.id),
@@ -1401,8 +1423,9 @@
       if ((m = p.match(/^\/shop\/products\/([^/]+)\/invoice$/))) {
         const s = config.shop.products.find((x) => x.code === m[1]);
         if (!s) err("Предмет не найден");
+        if(s.code==='vip_lifetime'&&state.vipLifetime||s.code==='name_color'&&state.nameColorUnlocked)err('Предмет уже куплен');
         change(-s.stars * 1000, "shop");
-        reward(s.rewards);
+        reward(s.code==='vip_lifetime'?{vipLifetime:true}:s.rewards);
         return {
           link: "offline:paid",
           url: "offline:paid",
@@ -1481,8 +1504,8 @@
           value * order.multiplier * (1 + skill("buyer_bonus") / 100),
         );
         change(payout - normal.value, "buyer");
-        state.questCounts["buyer:" + order.id] =
-          (state.questCounts["buyer:" + order.id] || 0) + 1;
+        state.questCounts[day()+":buyer:" + order.id] =
+          (state.questCounts[day()+":buyer:" + order.id] || 0) + 1;
         return { payout };
       }
       if (p === "/market" && method === "GET") return market();
@@ -1493,6 +1516,7 @@
           points: [],
           count: 0,
           median: null,
+          avg: null,
           volume: 0,
           stats: { count: 0 },
         };
@@ -2153,6 +2177,7 @@
     function request(path, method = "GET", body = {}) {
       const before = clone(state);
       try {
+        state.vip=state.vipLifetime||state.vipUntil>now();
         const result = run(path, method, body || {});
         save();
         return clone(result);
