@@ -1,0 +1,4 @@
+const {test}=require('node:test'); const assert=require('node:assert/strict');
+let ui;try{ui=require('../Web/mobile-ui.js');}catch{ui={initialTheme:()=>undefined,backDestination:()=>undefined};}
+test('fresh installation starts dark and saved light choice wins',()=>{assert.equal(ui.initialTheme(null),'dark');assert.equal(ui.initialTheme('light'),'light');assert.equal(ui.initialTheme('dark'),'dark');assert.equal(ui.initialTheme('broken'),'dark');});
+test('direct deep links return to their parent without leaving the app',()=>{assert.equal(ui.backDestination('/numbers/123'),'/collection');assert.equal(ui.backDestination('/phones/123'),'/phones/mine');assert.equal(ui.backDestination('/games/coin/123'),'/games?game=coin');assert.equal(ui.backDestination('/games/dice/123'),'/games?game=dice');assert.equal(ui.backDestination('/games/duel/123'),'/games');assert.equal(ui.backDestination('/shop'),'/');assert.equal(ui.backDestination('/'),null);});

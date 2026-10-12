@@ -4,6 +4,7 @@
   window.offlineGame = engine;
   const nop = () => {};
   const events = new Map();
+  const backHandlers=new Set();
   const app = {
     initData: "offline",
     initDataUnsafe: {
@@ -11,7 +12,7 @@
     },
     version: "9.6",
     platform: "ios",
-    colorScheme: localStorage.getItem("ciferki.theme") || "light",
+    colorScheme: CiferkiMobile.initialTheme(localStorage.getItem("ciferki.theme")),
     themeParams: {},
     ready: nop,
     expand: nop,
@@ -27,7 +28,7 @@
       events.get(name).add(fn);
     },
     offEvent: (name, fn) => events.get(name)?.delete(fn),
-    BackButton: { show: nop, hide: nop, onClick: nop, offClick: nop },
+    BackButton: { show:()=>window.CiferkiMobile.updateBack?.(), hide:()=>window.CiferkiMobile.updateBack?.(), onClick:fn=>backHandlers.add(fn), offClick:fn=>backHandlers.delete(fn) },
     MainButton: {
       show: nop,
       hide: nop,
@@ -66,6 +67,7 @@
     },
   });
   window.Telegram = { WebApp: app };
+  CiferkiMobile.mount(app,events,backHandlers);
   window.addEventListener("resize", () =>
     events.get("viewportChanged")?.forEach((fn) => fn({ isStateStable: true })),
   );

@@ -25,13 +25,17 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKUIDele
     private var webView: WKWebView!
     private var server: LocalWebServer?
     private let loading = UILabel()
+    override var preferredStatusBarStyle: UIStatusBarStyle { overrideUserInterfaceStyle == .dark ? .lightContent : .darkContent }
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(red: 0.95, green: 0.95, blue: 0.97, alpha: 1)
+        let light = UserDefaults.standard.string(forKey: "appearance") == "light"
+        overrideUserInterfaceStyle = light ? .light : .dark
+        view.backgroundColor = light ? UIColor(red: 0.949, green: 0.949, blue: 0.969, alpha: 1) : .black
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.userContentController.add(self, name: "haptic")
+        configuration.userContentController.add(self, name: "theme")
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -72,6 +76,17 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKUIDele
         decisionHandler(local || url.absoluteString == "about:blank" ? .allow : .cancel)
     }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "theme", let data = message.body as? [String: String] {
+            let light = data["scheme"] == "light"
+            UserDefaults.standard.set(light ? "light" : "dark", forKey: "appearance")
+            overrideUserInterfaceStyle = light ? .light : .dark
+            let background = light ? UIColor(red: 0.949, green: 0.949, blue: 0.969, alpha: 1) : UIColor.black
+            view.backgroundColor = background
+            webView.backgroundColor = background
+            webView.scrollView.backgroundColor = background
+            setNeedsStatusBarAppearanceUpdate()
+            return
+        }
         guard message.name == "haptic" else { return }
         let style = message.body as? String ?? "light"
         if style == "selection" { UISelectionFeedbackGenerator().selectionChanged() }
@@ -89,5 +104,5 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKUIDele
         alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
         present(alert, animated: true)
     }
-    deinit { webView?.configuration.userContentController.removeScriptMessageHandler(forName: "haptic") }
+    deinit { for name in ["haptic", "theme"] { webView?.configuration.userContentController.removeScriptMessageHandler(forName: name) } }
 }
