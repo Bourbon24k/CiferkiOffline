@@ -1,2 +1,9 @@
 work/
 .DS_Store
+
+outputs/*.ipa
+outputs/*.zip
+outputs/CiferkiOffline*.png
+DerivedData/
+*.xcuserstate
+xcuserdata/
