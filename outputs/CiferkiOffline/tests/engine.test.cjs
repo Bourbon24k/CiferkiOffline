@@ -259,11 +259,115 @@ test("salon stock accrues cash with elapsed time and collection cannot double pa
   e.request(`/salons/${open.id}/collect`, "POST", {});
   assert.equal(e.state.balance, before + status.cash);
 });
-test('winning duel with a default skin preserves usable collection after reload',()=>{const store=storage();let seed=7;const rng=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296);const e=make(rng,store);e.request('/promo','POST',{code:'OFFLINE'});e.request('/shop/skins/graphite/buy','POST',{});e.request('/me/settings','PUT',{defaultSkin:'graphite'});const g=e.request('/duels','POST',{tier:'standard',count:1}).duel;e.request(`/duels/${g.id}/ready`,'POST',{});e.request(`/duels/${g.id}/spin`,'POST',{});assert.ok(e.request('/numbers').items.length>0);assert.equal(make(rng,store).request('/numbers').items[0].skin.code,'graphite');});
-test('save missing required profile falls back to intact backup before rewriting',()=>{const store=storage();const e=make(()=>.5,store);e.request('/spins','POST',{tier:'standard'});const bad=JSON.parse(store.getItem('ciferki.offline.v1'));delete bad.profile;store.setItem('ciferki.offline.v1',JSON.stringify(bad));const loaded=make(()=>.5,store);assert.equal(loaded.recovered,true);assert.equal(loaded.request('/me').user.name,'Игрок');assert.equal(loaded.request('/numbers').total,1);});
-test('roulette ticket, boost, discount and extra-attempt prizes are applied',()=>{const cases=[[.65,'standardTickets',1],[.80,'plusTickets',1],[.85,'luckBoostSpins',3],[.95,'spinDiscountUses',1]];for(const [random,key,value] of cases){const e=make(()=>random);e.request('/roulette/spin','POST',{});assert.equal(e.state.consumables[key],value);}const e=make(()=>.99);e.request('/roulette/spin','POST',{});assert.equal(e.request('/roulette/status').freeLeft,1);});
-test('buyer daily quota resets on the next date',()=>{let time=Date.parse('2026-10-12T12:00:00Z');const e=createEngine(storage(),()=>time,()=>.5);const cfg=require('../Web/config.js');const order=cfg.buyer.orders.find(x=>x.kind==='operator');const c=cfg.countries.find(c=>c.operators.some(o=>o.color===order.operatorColor));const op=c.operators.find(o=>o.color===order.operatorColor);for(let i=0;i<3;i++){const n=e.request('/spins','POST',{tier:'standard',country:c.iso2,operator:op.code}).number;e.request(`/buyer/orders/${order.id}/sell`,'POST',{instanceId:n.id});}assert.equal(e.request('/buyer').orders.find(x=>x.id===order.id).sold,3);time+=86400000;assert.equal(e.request('/buyer').orders.find(x=>x.id===order.id).sold,0);});
-function funded(random=()=>.5){const store=storage();make(random,store);const s=JSON.parse(store.getItem('ciferki.offline.v1'));s.balance=2000000;store.setItem('ciferki.offline.v1',JSON.stringify(s));return make(random,store);}
-test('purchased inventory and time-limited luck have actual effects',()=>{const e=funded();e.request('/shop/products/slots_25/invoice','POST',{});assert.equal(e.request('/me').inventory.limit,125);e.request('/shop/products/luck2_1d/invoice','POST',{});assert.equal(e.request('/spins/config').luck.next,2);});
-test('lifetime VIP purchase unlocks VIP pass and cannot be bought twice',()=>{const e=funded();e.request('/shop/products/vip_lifetime/invoice','POST',{});assert.equal(e.request('/pass').vip,true);assert.throws(()=>e.request('/shop/products/vip_lifetime/invoice','POST',{}));});
-test('TopSecret ticket produces an owned short number and is consumed',()=>{const e=funded();e.request('/shop/products/topsecret_d2/invoice','POST',{});assert.ok(e.request('/spins/config').tiers.some(t=>t.code==='topsecret_d2'));const n=e.request('/spins','POST',{tier:'topsecret_d2'}).number;assert.ok(n.nationalNumber.length<=2);assert.equal(n.rarity,'mythic');assert.equal(e.request('/numbers').total,1);assert.throws(()=>e.request('/spins','POST',{tier:'topsecret_d2'}));});
+test("winning duel with a default skin preserves usable collection after reload", () => {
+  const store = storage();
+  let seed = 7;
+  const rng = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  const e = make(rng, store);
+  e.request("/promo", "POST", { code: "OFFLINE" });
+  e.request("/shop/skins/graphite/buy", "POST", {});
+  e.request("/me/settings", "PUT", { defaultSkin: "graphite" });
+  const g = e.request("/duels", "POST", { tier: "standard", count: 1 }).duel;
+  e.request(`/duels/${g.id}/ready`, "POST", {});
+  e.request(`/duels/${g.id}/spin`, "POST", {});
+  assert.ok(e.request("/numbers").items.length > 0);
+  assert.equal(
+    make(rng, store).request("/numbers").items[0].skin.code,
+    "graphite",
+  );
+});
+test("save missing required profile falls back to intact backup before rewriting", () => {
+  const store = storage();
+  const e = make(() => 0.5, store);
+  e.request("/spins", "POST", { tier: "standard" });
+  const bad = JSON.parse(store.getItem("ciferki.offline.v1"));
+  delete bad.profile;
+  store.setItem("ciferki.offline.v1", JSON.stringify(bad));
+  const loaded = make(() => 0.5, store);
+  assert.equal(loaded.recovered, true);
+  assert.equal(loaded.request("/me").user.name, "Игрок");
+  assert.equal(loaded.request("/numbers").total, 1);
+});
+test("roulette ticket, boost, discount and extra-attempt prizes are applied", () => {
+  const cases = [
+    [0.65, "standardTickets", 1],
+    [0.8, "plusTickets", 1],
+    [0.85, "luckBoostSpins", 3],
+    [0.95, "spinDiscountUses", 1],
+  ];
+  for (const [random, key, value] of cases) {
+    const e = make(() => random);
+    e.request("/roulette/spin", "POST", {});
+    assert.equal(e.state.consumables[key], value);
+  }
+  const e = make(() => 0.99);
+  e.request("/roulette/spin", "POST", {});
+  assert.equal(e.request("/roulette/status").freeLeft, 1);
+});
+test("buyer daily quota resets on the next date", () => {
+  let time = Date.parse("2026-10-12T12:00:00Z");
+  const e = createEngine(
+    storage(),
+    () => time,
+    () => 0.5,
+  );
+  const cfg = require("../Web/config.js");
+  const order = cfg.buyer.orders.find((x) => x.kind === "operator");
+  const c = cfg.countries.find((c) =>
+    c.operators.some((o) => o.color === order.operatorColor),
+  );
+  const op = c.operators.find((o) => o.color === order.operatorColor);
+  for (let i = 0; i < 3; i++) {
+    const n = e.request("/spins", "POST", {
+      tier: "standard",
+      country: c.iso2,
+      operator: op.code,
+    }).number;
+    e.request(`/buyer/orders/${order.id}/sell`, "POST", { instanceId: n.id });
+  }
+  assert.equal(
+    e.request("/buyer").orders.find((x) => x.id === order.id).sold,
+    3,
+  );
+  time += 86400000;
+  assert.equal(
+    e.request("/buyer").orders.find((x) => x.id === order.id).sold,
+    0,
+  );
+});
+function funded(random = () => 0.5) {
+  const store = storage();
+  make(random, store);
+  const s = JSON.parse(store.getItem("ciferki.offline.v1"));
+  s.balance = 2000000;
+  store.setItem("ciferki.offline.v1", JSON.stringify(s));
+  return make(random, store);
+}
+test("purchased inventory and time-limited luck have actual effects", () => {
+  const e = funded();
+  e.request("/shop/products/slots_25/invoice", "POST", {});
+  assert.equal(e.request("/me").inventory.limit, 125);
+  e.request("/shop/products/luck2_1d/invoice", "POST", {});
+  assert.equal(e.request("/spins/config").luck.next, 2);
+});
+test("lifetime VIP purchase unlocks VIP pass and cannot be bought twice", () => {
+  const e = funded();
+  e.request("/shop/products/vip_lifetime/invoice", "POST", {});
+  assert.equal(e.request("/pass").vip, true);
+  assert.throws(() =>
+    e.request("/shop/products/vip_lifetime/invoice", "POST", {}),
+  );
+});
+test("TopSecret ticket produces an owned short number and is consumed", () => {
+  const e = funded();
+  e.request("/shop/products/topsecret_d2/invoice", "POST", {});
+  assert.ok(
+    e.request("/spins/config").tiers.some((t) => t.code === "topsecret_d2"),
+  );
+  const n = e.request("/spins", "POST", { tier: "topsecret_d2" }).number;
+  assert.ok(n.nationalNumber.length <= 2);
+  assert.equal(n.rarity, "mythic");
+  assert.equal(e.request("/numbers").total, 1);
+  assert.throws(() => e.request("/spins", "POST", { tier: "topsecret_d2" }));
+});
+test('lottery result includes finite burned amount and winner ticket counts',()=>{let time=Date.parse('2026-10-12T12:00:00Z');const e=createEngine(storage(),()=>time,()=>.5);e.request('/lottery/buy','POST',{count:1});time+=300001;const l=e.request('/lottery');assert.equal(l.last.burned,153000);assert.ok(l.last.winners.every(w=>Number.isInteger(w.tickets)));const bal=e.state.balance;e.request('/lottery');assert.equal(e.state.balance,bal);});
